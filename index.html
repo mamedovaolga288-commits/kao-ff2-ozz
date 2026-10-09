@@ -53,23 +53,23 @@ body.dark .status-wrong{background:#7f1d1d;color:#fca5a5}
 .search{width:100%;padding:13px 14px;font-size:16px;border:1px solid var(--input-border);border-radius:12px;margin-bottom:10px;background:var(--input-bg);color:var(--text);font-family:inherit;transition:background .3s,color .3s,border .3s}
 .search::placeholder{color:var(--label)}
 .scan-video-wrap{position:relative;width:100%;max-width:500px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000}
-.scan-video-wrap video{display:block;width:100%;height:auto;transition:transform .15s}
+.scan-video-wrap video{display:block;width:100%;height:auto;transition:transform .15s;transform-origin:center center}
 .scan-line{position:absolute;left:5%;right:5%;top:50%;height:90px;transform:translateY(-50%);border:3px solid #22c55e;border-radius:8px;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.35);transition:box-shadow .1s}
 .scan-line.flash{box-shadow:0 0 0 9999px rgba(0,0,0,.35), 0 0 20px 5px #22c55e}
 .scan-line-text{position:absolute;left:0;right:0;top:calc(50% + 50px);text-align:center;color:#fff;font-size:13px;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.8)}
-.zoom-panel{width:100%;max-width:500px;margin:0 auto 10px;background:rgba(0,0,0,.75);padding:12px 16px;border-radius:12px;color:#fff}
+.zoom-panel{width:100%;max-width:500px;margin:0 auto 8px;background:linear-gradient(180deg, #1e293b, #0f172a);padding:12px 16px;border-radius:12px;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.3)}
 .zoom-panel .zoom-label{font-size:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;font-weight:600}
 .zoom-panel input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:8px;border-radius:4px;background:rgba(255,255,255,.3);outline:none;margin:0}
 .zoom-panel input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:30px;height:30px;border-radius:50%;background:#22c55e;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);border:2px solid #fff}
 .zoom-panel input[type=range]::-moz-range-thumb{width:30px;height:30px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5)}
-.zoom-tip{font-size:12px;color:#ffcc00;text-align:center;margin-top:8px;line-height:1.3}
+.zoom-tip{font-size:11px;color:#ffcc00;text-align:center;margin-top:6px;line-height:1.3}
 #reader{width:100%;max-width:500px;margin:0 auto}
 #reader video{border-radius:12px}
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;padding:10px;overflow-y:auto}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.97);z-index:100;padding:8px;overflow-y:auto}
 .modal.active{display:flex;flex-direction:column}
-.modal-header{color:#fff;font-size:17px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
-.modal-close{background:rgba(255,255,255,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:18px;cursor:pointer}
-.scan-hint{color:#fff;text-align:center;font-size:14px;margin:6px 0 10px;flex-shrink:0}
+.modal-header{color:#fff;font-size:17px;font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.modal-close{background:rgba(255,255,255,.2);color:#fff;border:none;width:44px;height:44px;border-radius:50%;font-size:20px;cursor:pointer}
+.scan-hint{color:#fff;text-align:center;font-size:13px;margin:0 0 8px;flex-shrink:0}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 20px;border-radius:24px;font-size:14px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90%;text-align:center}
 .toast.show{opacity:1}
 .file-input-wrap{position:relative;overflow:hidden}
@@ -115,6 +115,11 @@ textarea.search{min-height:100px;resize:vertical;font-family:inherit}
   <div class="modal-header">
     <span id="scanTitle">Сканирование</span>
     <button type="button" class="modal-close" onclick="closeScan()">X</button>
+  </div>
+  <div class="zoom-panel" id="zoomPanel">
+    <div class="zoom-label"><span>🔍 Зум</span><span id="zoomValue">1.0x</span></div>
+    <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
+    <div class="zoom-tip" id="zoomTip">Если код не читается — увеличьте зум</div>
   </div>
   <div class="scan-hint" id="scanHint">Наведите камеру на штрихкод или S/N</div>
   <div id="reader"></div>
@@ -463,12 +468,24 @@ function successSignal(){
   }
 }
 
+// Сброс панели зума
+function resetZoomPanel(){
+  var slider = document.getElementById("zoomSlider");
+  var valEl = document.getElementById("zoomValue");
+  var tip = document.getElementById("zoomTip");
+  if(slider) slider.value = 1;
+  if(valEl) valEl.textContent = "1.0x";
+  if(tip) tip.textContent = "Если код не читается — увеличьте зум";
+  slider.oninput = null;
+}
+
 async function openScan(title, hint, cb){
   $("scanTitle").textContent = title;
   $("scanHint").textContent = hint;
   $("scanModal").classList.add("active");
   scanCallback = cb;
   $("reader").innerHTML = "";
+  resetZoomPanel();
 
   var hasNative = ("BarcodeDetector" in window);
 
@@ -482,24 +499,61 @@ async function openScan(title, hint, cb){
     }
   }
 
-  try {
-    if(typeof Html5Qrcode === "undefined"){ toast("Сканер не загружен"); closeScan(); return; }
-    scanner = new Html5Qrcode("reader");
-    var config = {
-      fps: 15,
-      qrbox: function(w, h){ return { width: Math.floor(w * 0.9), height: 100 }; },
-      aspectRatio: 1.7
-    };
-    if(typeof Html5QrcodeSupportedFormats !== "undefined"){
-      config.formatsToSupport = [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.QR_CODE,
-        Html5QrcodeSupportedFormats.DATA_MATRIX
-      ];
+  // Используем html5-qrcode как основной на старых iPhone
+  await startHtml5Scanner();
+}
+
+async function startHtml5Scanner(){
+  if(typeof Html5Qrcode === "undefined"){
+    toast("Библиотека сканера не загружена");
+    closeScan();
+    return;
+  }
+
+  var holder = document.createElement("div");
+  holder.id = "html5reader";
+  holder.style.width = "100%";
+  holder.style.maxWidth = "500px";
+  holder.style.margin = "0 auto";
+  $("reader").appendChild(holder);
+
+  scanner = new Html5Qrcode("html5reader", { verbose: false });
+
+  var config = {
+    fps: 30,
+    qrbox: function(w, h){
+      var minEdge = Math.min(w, h);
+      return {
+        width: Math.floor(w * 0.95),
+        height: Math.floor(Math.min(180, h * 0.4))
+      };
+    },
+    aspectRatio: 1.777,
+    disableFlip: false,
+    experimentalFeatures: {
+      useBarCodeDetectorIfSupported: true
     }
-    await scanner.start({ facingMode: "environment" }, config,
+  };
+
+  if(typeof Html5QrcodeSupportedFormats !== "undefined"){
+    config.formatsToSupport = [
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.DATA_MATRIX
+    ];
+  }
+
+  try {
+    await scanner.start(
+      { facingMode: "environment" },
+      config,
       function(decodedText){
         if(scanCallback){
           var c = scanCallback; scanCallback = null;
@@ -507,7 +561,25 @@ async function openScan(title, hint, cb){
           closeScan();
           setTimeout(function(){ c(decodedText.trim()); }, 200);
         }
-      }, function(){});
+      },
+      function(){}
+    );
+
+    // Активируем зум для html5-сканера
+    setTimeout(function(){
+      try {
+        var videoEl = document.querySelector("#html5reader video");
+        if(!videoEl) return;
+        var stream = videoEl.srcObject;
+        if(!stream) return;
+        var track = stream.getVideoTracks()[0];
+        if(!track) return;
+        nativeTrack = track;
+        nativeVideo = videoEl;
+        activateZoom();
+      } catch(e){ console.log("Не удалось активировать зум", e); }
+    }, 800);
+
   } catch(err){
     console.error(err);
     toast("Камера недоступна: " + err.message);
@@ -519,9 +591,6 @@ async function startNativeScanner(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     throw new Error("getUserMedia не поддерживается");
   }
-
-  // Панель зума создаётся сразу, до запуска видео
-  addZoomPanelEarly();
 
   var deviceId = null;
   try {
@@ -580,7 +649,7 @@ async function startNativeScanner(){
     }
   } catch(e){ console.log("Автофокус недоступен:", e); }
 
-  activateZoomSlider();
+  activateZoom();
 
   var hintTimeout = setTimeout(function(){
     var h = document.querySelector(".scan-line-text");
@@ -588,7 +657,7 @@ async function startNativeScanner(){
       h.textContent = "Отодвиньте телефон на 15–20 см или увеличьте зум";
       h.style.color = "#ffcc00";
     }
-  }, 4000);
+  }, 5000);
 
   var formats = ["code_128", "code_39", "code_93", "codabar", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code", "data_matrix", "itf"];
   try {
@@ -606,7 +675,7 @@ async function startNativeScanner(){
     if(!scanCallback){ return; }
     if(detecting) return;
     var now = Date.now();
-    if(now - lastDetect < 130) return;
+    if(now - lastDetect < 100) return;
     lastDetect = now;
     detecting = true;
     try {
@@ -623,33 +692,32 @@ async function startNativeScanner(){
       }
     } catch(e){}
     detecting = false;
-  }, 130);
+  }, 100);
 }
 
-function addZoomPanelEarly(){
-  var panel = document.createElement("div");
-  panel.className = "zoom-panel";
-  panel.id = "zoomPanel";
-  panel.innerHTML =
-    '<div class="zoom-label"><span>🔍 Зум</span><span id="zoomValue">1.0x</span></div>' +
-    '<input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">' +
-    '<div class="zoom-tip">Если штрихкод не читается — увеличьте зум</div>';
-  $("reader").appendChild(panel);
-}
-
-function activateZoomSlider(){
+// Универсальная активация ползунка зума
+function activateZoom(){
   var slider = document.getElementById("zoomSlider");
   var valEl = document.getElementById("zoomValue");
+  var tip = document.getElementById("zoomTip");
   if(!slider || !nativeTrack) return;
 
   var caps = {};
   try { caps = nativeTrack.getCapabilities ? nativeTrack.getCapabilities() : {}; } catch(e){}
   var maxZoom = (caps.zoom && caps.zoom.max) ? caps.zoom.max : 5;
   var minZoom = (caps.zoom && caps.zoom.min) ? caps.zoom.min : 1;
+
   slider.min = minZoom;
-  slider.max = maxZoom;
+  slider.max = Math.max(maxZoom, 3);
   slider.value = minZoom;
+  slider.step = 0.1;
   valEl.textContent = minZoom.toFixed(1) + "x";
+
+  if (caps.zoom) {
+    tip.textContent = "Ползунок управляет оптическим зумом камеры";
+  } else {
+    tip.textContent = "Ползунок увеличивает картинку (программный зум)";
+  }
 
   slider.oninput = async function(){
     var v = parseFloat(slider.value);
@@ -662,7 +730,6 @@ function activateZoomSlider(){
     }
     if (nativeVideo) {
       nativeVideo.style.transform = "scale(" + v + ")";
-      nativeVideo.style.transformOrigin = "center center";
     }
   };
 }
@@ -680,6 +747,7 @@ function closeScan(){
   if(scanner){
     scanner.stop().then(function(){ try{ scanner.clear(); }catch(e){} scanner = null; }).catch(function(){ scanner = null; });
   }
+  resetZoomPanel();
 }
 
 $("scanBtn").onclick = function(){
