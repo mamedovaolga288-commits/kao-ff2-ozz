@@ -520,10 +520,9 @@ async function startNativeScanner(){
     throw new Error("getUserMedia не поддерживается");
   }
 
-  // 1. Добавляем панель зума СРАЗУ, до видео, чтобы она была видна без прокрутки
+  // Панель зума создаётся сразу, до запуска видео
   addZoomPanelEarly();
 
-  // 2. Запускаем камеру
   var deviceId = null;
   try {
     var devices = await navigator.mediaDevices.enumerateDevices();
@@ -581,7 +580,6 @@ async function startNativeScanner(){
     }
   } catch(e){ console.log("Автофокус недоступен:", e); }
 
-  // Активируем ползунок зума
   activateZoomSlider();
 
   var hintTimeout = setTimeout(function(){
@@ -628,7 +626,6 @@ async function startNativeScanner(){
   }, 130);
 }
 
-// Создаём панель зума заранее (она будет видна всегда сверху)
 function addZoomPanelEarly(){
   var panel = document.createElement("div");
   panel.className = "zoom-panel";
