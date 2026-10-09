@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1e40af">
+<title>Складской сканер</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#f1f5f9; --card-bg:#fff; --text:#0f172a; --label:#64748b; --border:#f1f5f9;
+  --input-bg:#fff; --input-border:#cbd5e1; --debug-bg:#f8fafc; --debug-text:#64748b;
+  --header-bg:#1e40af; --header-text:#fff; --comment-bg:#e0f2fe; --comment-text:#0c4a6e;
+}
+body.dark{
+  --bg:#0f172a; --card-bg:#1e293b; --text:#f1f5f9; --label:#94a3b8; --border:#334155;
+  --input-bg:#1e293b; --input-border:#475569; --debug-bg:#1e293b; --debug-text:#94a3b8;
+  --header-bg:#0c1e5c; --header-text:#f1f5f9; --comment-bg:#1e3a5f; --comment-text:#bae6fd;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);padding-bottom:40px;min-height:100vh;transition:background .3s,color .3s}
+header{background:var(--header-bg);color:var(--header-text);padding:14px 16px;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;justify-content:space-between;align-items:center;gap:10px;transition:background .3s}
+header h1{margin:0;font-size:17px;font-weight:600}
+header .subtitle{font-size:12px;opacity:.85;margin-top:3px}
+.theme-btn{background:rgba(255,255,255,.15);border:none;color:inherit;width:42px;height:42px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;transition:background .2s}
+.theme-btn:active{background:rgba(255,255,255,.3)}
+.container{padding:12px;max-width:600px;margin:0 auto}
+.btn{display:block;width:100%;padding:18px;font-size:17px;font-weight:600;border:none;border-radius:14px;cursor:pointer;margin-bottom:10px;color:#fff;text-align:center;transition:transform .1s,opacity .2s;font-family:inherit}
+.btn:active{transform:scale(.98);opacity:.9}
+.btn-primary{background:#16a34a}
+.btn-lightred{background:#f87171;color:#7f1d1d}
+.btn-sky{background:#38bdf8;color:#0c4a6e}
+.btn-yellow{background:#f59e0b}
+.btn-success{background:#16a34a}
+.btn-secondary{background:#64748b}
+.btn-row{display:flex;gap:8px}
+.btn-row .btn{flex:1;padding:16px 6px;font-size:13px;line-height:1.2;margin-bottom:0}
+.card{background:var(--card-bg);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:background .3s}
+.card .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);gap:10px;font-size:15px}
+.card .row:last-child{border-bottom:none}
+.card .label{color:var(--label);flex-shrink:0}
+.card .value{font-weight:600;text-align:right;word-break:break-word}
+.card .comment{background:var(--comment-bg);color:var(--comment-text);padding:10px;border-radius:10px;margin-top:8px;font-size:14px;white-space:pre-wrap}
+.status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+.status-buffer{background:#fef3c7;color:#92400e}
+.status-ok{background:#dcfce7;color:#166534}
+.status-wrong{background:#fee2e2;color:#991b1b}
+body.dark .status-buffer{background:#78350f;color:#fde68a}
+body.dark .status-ok{background:#14532d;color:#86efac}
+body.dark .status-wrong{background:#7f1d1d;color:#fca5a5}
+.search{width:100%;padding:13px 14px;font-size:16px;border:1px solid var(--input-border);border-radius:12px;margin-bottom:10px;background:var(--input-bg);color:var(--text);font-family:inherit;transition:background .3s,color .3s,border .3s}
+.search::placeholder{color:var(--label)}
+.scan-video-wrap{position:relative;width:100%;max-width:500px;margin:0 auto;border-radius:12px;overflow:hidden;background:#000}
+.scan-video-wrap video{display:block;width:100%;height:auto;transition:transform .15s}
+.scan-line{position:absolute;left:5%;right:5%;top:50%;height:90px;transform:translateY(-50%);border:3px solid #22c55e;border-radius:8px;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.35);transition:box-shadow .1s}
+.scan-line.flash{box-shadow:0 0 0 9999px rgba(0,0,0,.35), 0 0 20px 5px #22c55e}
+.scan-line-text{position:absolute;left:0;right:0;top:calc(50% + 50px);text-align:center;color:#fff;font-size:13px;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.zoom-panel{width:100%;max-width:500px;margin:0 auto 10px;background:rgba(0,0,0,.75);padding:12px 16px;border-radius:12px;color:#fff}
+.zoom-panel .zoom-label{font-size:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;font-weight:600}
+.zoom-panel input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:8px;border-radius:4px;background:rgba(255,255,255,.3);outline:none;margin:0}
+.zoom-panel input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:30px;height:30px;border-radius:50%;background:#22c55e;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);border:2px solid #fff}
+.zoom-panel input[type=range]::-moz-range-thumb{width:30px;height:30px;border-radius:50%;background:#22c55e;cursor:pointer;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.zoom-tip{font-size:12px;color:#ffcc00;text-align:center;margin-top:8px;line-height:1.3}
+#reader{width:100%;max-width:500px;margin:0 auto}
+#reader video{border-radius:12px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;padding:10px;overflow-y:auto}
+.modal.active{display:flex;flex-direction:column}
+.modal-header{color:#fff;font-size:17px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.modal-close{background:rgba(255,255,255,.15);color:#fff;border:none;width:40px;height:40px;border-radius:50%;font-size:18px;cursor:pointer}
+.scan-hint{color:#fff;text-align:center;font-size:14px;margin:6px 0 10px;flex-shrink:0}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:12px 20px;border-radius:24px;font-size:14px;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90%;text-align:center}
+.toast.show{opacity:1}
+.file-input-wrap{position:relative;overflow:hidden}
+.file-input-wrap input[type=file]{position:absolute;left:-9999px}
+.debug{font-size:11px;color:var(--debug-text);padding:8px;background:var(--debug-bg);border-radius:8px;margin-top:10px;word-break:break-all;line-height:1.4;transition:background .3s,color .3s}
+textarea.search{min-height:100px;resize:vertical;font-family:inherit}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Складской сканер</h1>
+    <div class="subtitle" id="headerInfo">Загрузка...</div>
+  </div>
+  <button type="button" class="theme-btn" id="themeBtn" title="Сменить тему">🌙</button>
+</header>
+
+<div class="container">
+  <button type="button" class="btn btn-primary" id="scanBtn">Сканировать ШК / S/N</button>
+
+  <div class="btn-row" style="margin-bottom:10px">
+    <button type="button" class="btn btn-lightred" id="resetBtn">Сбросить</button>
+    <button type="button" class="btn btn-yellow" id="commentBtn">Комментарий</button>
+    <button type="button" class="btn btn-sky" id="placeBtn">Размещение</button>
+  </div>
+
+  <div id="result"></div>
+
+  <input type="search" class="search" id="searchInput" placeholder="Поиск по ШК, S/N или наименованию">
+
+  <div class="file-input-wrap">
+    <button type="button" class="btn btn-secondary" id="importBtn">Загрузить Excel</button>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+  </div>
+
+  <button type="button" class="btn btn-secondary" id="exportBtn">Сохранить изменения в Excel</button>
+
+  <div class="debug" id="debug">Инициализация...</div>
+</div>
+
+<div class="modal" id="scanModal">
+  <div class="modal-header">
+    <span id="scanTitle">Сканирование</span>
+    <button type="button" class="modal-close" onclick="closeScan()">X</button>
+  </div>
+  <div class="scan-hint" id="scanHint">Наведите камеру на штрихкод или S/N</div>
+  <div id="reader"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var debugEl = document.getElementById("debug");
+function debug(msg){ if(debugEl) debugEl.textContent = msg; console.log("[debug]", msg); }
+
+var db = null;
+var useMemory = false;
+var memoryStore = new Map();
+var DB_NAME = "sklad_db", STORE = "items";
+
+function initDB(){
+  return new Promise(function(resolve){
+    debug("Открываю базу данных...");
+    var settled = false;
+    var done = function(ok){ if(!settled){ settled = true; resolve(ok); } };
+    setTimeout(function(){ if(!settled){ debug("База не открылась за 5 сек — работаю в памяти"); useMemory = true; done(false); } }, 5000);
+    try {
+      if(!window.indexedDB){ debug("IndexedDB не поддерживается"); useMemory = true; return done(false); }
+      var req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = function(e){
+        var _db = e.target.result;
+        if(!_db.objectStoreNames.contains(STORE)) _db.createObjectStore(STORE, { keyPath: "шк" });
+      };
+      req.onsuccess = function(e){ db = e.target.result; debug("База готова"); done(true); };
+      req.onerror = function(e){ debug("Ошибка БД"); useMemory = true; done(false); };
+      req.onblocked = function(){ debug("База заблокирована"); useMemory = true; done(false); };
+    } catch(err){
+      debug("Исключение: " + err.message);
+      useMemory = true;
+      done(false);
+    }
+  });
+}
+
+function countItems(){
+  if(useMemory) return Promise.resolve(memoryStore.size);
+  return new Promise(function(r){ try {
+    var t = db.transaction(STORE, "readonly").objectStore(STORE).count();
+    t.onsuccess = function(){ r(t.result); }; t.onerror = function(){ r(0); };
+  } catch(e){ r(0); } });
+}
+function getItem(k){
+  var key = String(k).trim();
+  if(useMemory) return Promise.resolve(memoryStore.get(key) || null);
+  return new Promise(function(r){ try {
+    var q = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
+    q.onsuccess = function(){ r(q.result || null); }; q.onerror = function(){ r(null); };
+  } catch(e){ r(null); } });
+}
+function putItem(i){
+  var key = String(i.шк).trim();
+  if(useMemory){ memoryStore.set(key, i); return Promise.resolve(); }
+  return new Promise(function(r, j){ try {
+    var q = db.transaction(STORE, "readwrite").objectStore(STORE).put(i);
+    q.onsuccess = function(){ r(); }; q.onerror = function(e){ j(e.target.error); };
+  } catch(e){ j(e); } });
+}
+function getAllItems(){
+  if(useMemory) return Promise.resolve(Array.from(memoryStore.values()));
+  return new Promise(function(r){ try {
+    var q = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
+    q.onsuccess = function(){ r(q.result || []); }; q.onerror = function(){ r([]); };
+  } catch(e){ r([]); } });
+}
+function clearAll(){
+  if(useMemory){ memoryStore.clear(); return Promise.resolve(); }
+  return new Promise(function(r){ try {
+    var q = db.transaction(STORE, "readwrite").objectStore(STORE).clear();
+    q.onsuccess = function(){ r(); }; q.onerror = function(){ r(); };
+  } catch(e){ r(); } });
+}
+function bulkPut(arr){
+  if(useMemory){ arr.forEach(function(i){ memoryStore.set(String(i.шк).trim(), i); }); return Promise.resolve(); }
+  return new Promise(function(res, rej){ try {
+    var tx = db.transaction(STORE, "readwrite");
+    var s = tx.objectStore(STORE);
+    arr.forEach(function(i){ s.put(i); });
+    tx.oncomplete = function(){ res(); }; tx.onerror = function(e){ rej(e.target.error); };
+  } catch(e){ rej(e); } });
+}
+
+async function findItem(code){
+  var c = String(code).trim();
+  if(!c) return null;
+  var byShk = await getItem(c);
+  if(byShk) return byShk;
+  var bySn = await getItem("SN:" + c);
+  if(bySn) return bySn;
+  var all = await getAllItems();
+  var lower = c.toLowerCase();
+  var found = all.find(function(i){
+    var sn = findSN(i);
+    return sn && sn.toLowerCase() === lower;
+  });
+  return found || null;
+}
+
+var currentItem = null, scanCallback = null, scanner = null;
+var nativeStream = null, nativeLoop = null, nativeDetector = null;
+var nativeVideo = null, nativeTrack = null;
+function $(id){ return document.getElementById(id); }
+
+function toast(msg, ms){
+  ms = ms || 2500;
+  var t = $("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._tid);
+  t._tid = setTimeout(function(){ t.classList.remove("show"); }, ms);
+}
+async function refreshHeader(){
+  var c = await countItems();
+  $("headerInfo").textContent = c > 0 ? ("В базе: " + c.toLocaleString("ru-RU") + " записей") : "База пуста — загрузите Excel";
+  debug(useMemory ? "Режим памяти" : "Работаю с IndexedDB");
+}
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+function findSN(it){
+  var keys = ["s/n", "sn", "серийный номер", "серийный", "serial", "serial number", "сер. номер", "сер номер"];
+  for(var i = 0; i < keys.length; i++){
+    if(it[keys[i]]) return it[keys[i]];
+  }
+  return "";
+}
+function findComment(it){
+  var keys = ["комментарий", "комментарии", "коммент", "примечание", "примечания"];
+  for(var i = 0; i < keys.length; i++){
+    if(it[keys[i]]) return it[keys[i]];
+  }
+  return "";
+}
+function findPlacement(it){
+  var keys = ["размещение", "размещ", "новое размещение", "фактическое размещение"];
+  for(var i = 0; i < keys.length; i++){
+    if(it[keys[i]]) return it[keys[i]];
+  }
+  return "";
+}
+
+function renderItem(it){
+  var el = $("result");
+  if(!it){ el.innerHTML = ""; return; }
+  var st = (it.статус || "").toLowerCase();
+  var cls = "status-ok";
+  if(st.indexOf("буфер") >= 0) cls = "status-buffer";
+  else if(st.indexOf("нарушен") >= 0 || st.indexOf("не на месте") >= 0) cls = "status-wrong";
+  var cm = findComment(it);
+  var comment = cm ? '<div class="comment">💬 ' + esc(cm) + '</div>' : '';
+  var sn = findSN(it);
+  var snRow = sn ? '<div class="row"><span class="label">S/N</span><span class="value">' + esc(sn) + '</span></div>' : '';
+  var pl = findPlacement(it);
+  var plRow = pl ? '<div class="row"><span class="label">Размещение</span><span class="value">' + esc(pl) + '</span></div>' : '';
+  el.innerHTML =
+    '<div class="card">' +
+      '<div class="row"><span class="label">Имущество</span><span class="value">' + esc(it.имущество || "—") + '</span></div>' +
+      '<div class="row"><span class="label">ШК</span><span class="value">' + esc(it.шк || "—") + '</span></div>' +
+      snRow +
+      '<div class="row"><span class="label">Тип</span><span class="value">' + esc(it["тип имущества"] || "—") + '</span></div>' +
+      '<div class="row"><span class="label">Расположение</span><span class="value">' + esc(it.расположение || "—") + '</span></div>' +
+      plRow +
+      '<div class="row"><span class="label">МОЛ</span><span class="value">' + esc(it.мол || "—") + '</span></div>' +
+      '<div class="row"><span class="label">Ответственный</span><span class="value">' + esc(it.ответственный || "—") + '</span></div>' +
+      '<div class="row"><span class="label">Статус</span><span class="value"><span class="status-badge ' + cls + '">' + esc(it.статус || "—") + '</span></span></div>' +
+      comment +
+    '</div>';
+}
+
+$("importBtn").onclick = function(){ $("fileInput").click(); };
+$("fileInput").onchange = async function(e){
+  var f = e.target.files[0]; if(!f) return;
+  try {
+    toast("Читаю файл...");
+    debug("Читаю " + f.name);
+    var buf = await f.arrayBuffer();
+    var wb = XLSX.read(buf, { type: "array" });
+    var sh = wb.Sheets[wb.SheetNames[0]];
+    var rows = XLSX.utils.sheet_to_json(sh, { defval: "", raw: false });
+    debug("Прочитано строк: " + rows.length);
+    if(!rows.length){ toast("Файл пустой"); return; }
+    var shkKeys = ["шк", "штрихкод", "штрих-код", "штрих код", "barcode", "баркод", "инв", "инвентарный", "идентификатор", "id", "код"];
+    var snKeys = ["s/n", "sn", "серийный номер", "серийный", "serial", "serial number", "сер. номер", "сер номер"];
+    var commentAliases = ["комментарий", "комментарии", "коммент", "примечание", "примечания"];
+    var placementAliases = ["размещение", "размещ", "новое размещение", "фактическое размещение"];
+    var norm = [];
+    var detectedKey = null;
+    var detectedSnKey = null;
+    rows.forEach(function(r){
+      var o = {};
+      Object.keys(r).forEach(function(k){ o[String(k).trim().toLowerCase()] = String(r[k]).trim(); });
+      if(!detectedKey){
+        for(var i = 0; i < shkKeys.length; i++){
+          var found = Object.keys(o).find(function(k){ return k.indexOf(shkKeys[i]) >= 0; });
+          if(found && o[found]){ detectedKey = found; break; }
+        }
+      }
+      if(!detectedSnKey){
+        for(var i = 0; i < snKeys.length; i++){
+          var found = Object.keys(o).find(function(k){ return k === snKeys[i] || k.indexOf(snKeys[i]) >= 0; });
+          if(found && o[found]){ detectedSnKey = found; break; }
+        }
+      }
+      norm.push(o);
+    });
+    if(!detectedKey){
+      var sample = norm.slice(0, 50);
+      var candidates = {};
+      sample.forEach(function(o){
+        Object.keys(o).forEach(function(k){
+          var v = o[k];
+          if(/^\d{8,14}$/.test(v)){ candidates[k] = (candidates[k]||0) + 1; }
+        });
+      });
+      var best = Object.keys(candidates).sort(function(a,b){ return candidates[b] - candidates[a]; })[0];
+      if(best) detectedKey = best;
+    }
+    if(!detectedKey){ toast("Не нашла колонку с ШК"); debug("Не нашла колонку с ШК"); return; }
+    debug("Колонка ШК: " + detectedKey + " | S/N: " + (detectedSnKey || "—"));
+    var valid = [];
+    norm.forEach(function(o){
+      var shk = String(o[detectedKey] || "").trim();
+      if(!shk) return;
+      o["шк"] = shk;
+      if(detectedSnKey && o[detectedSnKey]){
+        o["sn"] = o[detectedSnKey];
+      }
+      if(!o["комментарий"]){
+        for(var i = 0; i < commentAliases.length; i++){
+          if(o[commentAliases[i]]){ o["комментарий"] = o[commentAliases[i]]; break; }
+        }
+      }
+      if(!o["размещение"]){
+        for(var i = 0; i < placementAliases.length; i++){
+          if(o[placementAliases[i]]){ o["размещение"] = o[placementAliases[i]]; break; }
+        }
+      }
+      if(!o["расположение"]){
+        if(o["место"]) o["расположение"] = o["место"];
+        if(o["местонахождение"]) o["расположение"] = o["местонахождение"];
+      }
+      valid.push(o);
+    });
+    debug("С колонкой ШК: " + valid.length);
+    if(!valid.length){ toast("Нет строк с ШК"); return; }
+    var oldItems = await getAllItems();
+    var oldMap = {};
+    oldItems.forEach(function(i){ oldMap[String(i.шк)] = i; });
+    valid.forEach(function(o){
+      var old = oldMap[String(o.шк)];
+      if(old){
+        if(old.комментарий) o.комментарий = old.комментарий;
+        if(old.размещение) o.размещение = old.размещение;
+      }
+    });
+    await clearAll();
+    var C = 500;
+    for(var i = 0; i < valid.length; i += C){
+      var slice = valid.slice(i, i + C);
+      var toPut = [];
+      slice.forEach(function(o){
+        toPut.push(o);
+        if(o["sn"]){
+          var clone = {};
+          for(var k in o) clone[k] = o[k];
+          clone["шк"] = "SN:" + o["sn"];
+          toPut.push(clone);
+        }
+      });
+      await bulkPut(toPut);
+    }
+    await refreshHeader();
+    toast("Загружено " + valid.length + " записей", 3000);
+    $("fileInput").value = "";
+  } catch(err){
+    console.error(err);
+    debug("Ошибка: " + err.message);
+    toast("Ошибка: " + err.message);
+  }
+};
+
+$("exportBtn").onclick = async function(){
+  try {
+    var items = await getAllItems();
+    items = items.filter(function(i){ return String(i.шк).indexOf("SN:") !== 0; });
+    if(!items.length){ toast("Нет данных"); return; }
+
+    var cols = [
+      { key: "имущество", header: "Имущество" },
+      { key: "шк", header: "ШК" },
+      { key: "тип имущества", header: "Тип имущества" },
+      { key: "расположение", header: "Расположение" },
+      { key: "мол", header: "МОЛ" },
+      { key: "ответственный", header: "Ответственный" },
+      { key: "статус", header: "Статус" },
+      { key: "sn", header: "S/N" },
+      { key: "комментарий", header: "Комментарий" },
+      { key: "размещение", header: "Размещение" }
+    ];
+
+    var rows = items.map(function(it){
+      var row = {};
+      cols.forEach(function(c){
+        var v = it[c.key];
+        if(v === undefined || v === null) v = "";
+        row[c.header] = v;
+      });
+      return row;
+    });
+
+    var ws = XLSX.utils.json_to_sheet(rows, { header: cols.map(function(c){ return c.header; }) });
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Данные");
+    var d = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, "sklad_" + d + ".xlsx");
+    toast("Файл сохранён");
+  } catch(err){ toast("Ошибка: " + err.message); }
+};
+
+function playBeep(){
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 1400;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch(e){ console.log("Звук недоступен", e); }
+}
+
+function successSignal(){
+  if(navigator.vibrate) navigator.vibrate(120);
+  playBeep();
+  var el = document.querySelector(".scan-line");
+  if(el){
+    el.classList.add("flash");
+    setTimeout(function(){ el.classList.remove("flash"); }, 350);
+  }
+}
+
+async function openScan(title, hint, cb){
+  $("scanTitle").textContent = title;
+  $("scanHint").textContent = hint;
+  $("scanModal").classList.add("active");
+  scanCallback = cb;
+  $("reader").innerHTML = "";
+
+  var hasNative = ("BarcodeDetector" in window);
+
+  if(hasNative){
+    try {
+      await startNativeScanner();
+      return;
+    } catch(err){
+      console.log("Нативный сканер не запустился:", err);
+      $("reader").innerHTML = "";
+    }
+  }
+
+  try {
+    if(typeof Html5Qrcode === "undefined"){ toast("Сканер не загружен"); closeScan(); return; }
+    scanner = new Html5Qrcode("reader");
+    var config = {
+      fps: 15,
+      qrbox: function(w, h){ return { width: Math.floor(w * 0.9), height: 100 }; },
+      aspectRatio: 1.7
+    };
+    if(typeof Html5QrcodeSupportedFormats !== "undefined"){
+      config.formatsToSupport = [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.DATA_MATRIX
+      ];
+    }
+    await scanner.start({ facingMode: "environment" }, config,
+      function(decodedText){
+        if(scanCallback){
+          var c = scanCallback; scanCallback = null;
+          successSignal();
+          closeScan();
+          setTimeout(function(){ c(decodedText.trim()); }, 200);
+        }
+      }, function(){});
+  } catch(err){
+    console.error(err);
+    toast("Камера недоступна: " + err.message);
+    closeScan();
+  }
+}
+
+async function startNativeScanner(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    throw new Error("getUserMedia не поддерживается");
+  }
+
+  // 1. Добавляем панель зума СРАЗУ, до видео, чтобы она была видна без прокрутки
+  addZoomPanelEarly();
+
+  // 2. Запускаем камеру
+  var deviceId = null;
+  try {
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var videoDevices = devices.filter(function(d){ return d.kind === 'videoinput'; });
+    var backCams = videoDevices.filter(function(d){
+      var lbl = (d.label || "").toLowerCase();
+      return lbl.indexOf('back') >= 0 || lbl.indexOf('rear') >= 0 || lbl.indexOf('environment') >= 0 || lbl.indexOf('wide') >= 0;
+    });
+    if (backCams.length > 0) deviceId = backCams[0].deviceId;
+    else if (videoDevices.length > 0) deviceId = videoDevices[videoDevices.length - 1].deviceId;
+  } catch (e) { console.warn("Не удалось перечислить камеры:", e); }
+
+  var constraints = {
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 30 },
+      focusMode: "continuous"
+    },
+    audio: false
+  };
+
+  nativeStream = await navigator.mediaDevices.getUserMedia(constraints);
+  nativeTrack = nativeStream.getVideoTracks()[0];
+
+  var wrap = document.createElement("div");
+  wrap.className = "scan-video-wrap";
+  var video = document.createElement("video");
+  video.setAttribute("playsinline", "true");
+  video.setAttribute("autoplay", "true");
+  video.setAttribute("muted", "true");
+  video.srcObject = nativeStream;
+  wrap.appendChild(video);
+  nativeVideo = video;
+
+  var line = document.createElement("div");
+  line.className = "scan-line";
+  wrap.appendChild(line);
+
+  var hintEl = document.createElement("div");
+  hintEl.className = "scan-line-text";
+  hintEl.textContent = "Штрихкод или S/N в рамке";
+  wrap.appendChild(hintEl);
+
+  $("reader").appendChild(wrap);
+
+  await new Promise(function(res){ video.onloadedmetadata = function(){ video.play().then(res).catch(res); }; });
+
+  try {
+    var caps = nativeTrack.getCapabilities ? nativeTrack.getCapabilities() : {};
+    if (caps.focusMode && caps.focusMode.indexOf("continuous") >= 0) {
+      await nativeTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+    }
+  } catch(e){ console.log("Автофокус недоступен:", e); }
+
+  // Активируем ползунок зума
+  activateZoomSlider();
+
+  var hintTimeout = setTimeout(function(){
+    var h = document.querySelector(".scan-line-text");
+    if (h && scanCallback) {
+      h.textContent = "Отодвиньте телефон на 15–20 см или увеличьте зум";
+      h.style.color = "#ffcc00";
+    }
+  }, 4000);
+
+  var formats = ["code_128", "code_39", "code_93", "codabar", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code", "data_matrix", "itf"];
+  try {
+    var supported = await BarcodeDetector.getSupportedFormats();
+    formats = formats.filter(function(f){ return supported.indexOf(f) >= 0; });
+  } catch(e){}
+
+  if(!formats.length) formats = undefined;
+  nativeDetector = formats ? new BarcodeDetector({ formats: formats }) : new BarcodeDetector();
+
+  var lastDetect = 0;
+  var detecting = false;
+
+  nativeLoop = setInterval(async function(){
+    if(!scanCallback){ return; }
+    if(detecting) return;
+    var now = Date.now();
+    if(now - lastDetect < 130) return;
+    lastDetect = now;
+    detecting = true;
+    try {
+      var codes = await nativeDetector.detect(video);
+      if(codes && codes.length){
+        var raw = codes[0].rawValue;
+        if(raw && scanCallback){
+          clearTimeout(hintTimeout);
+          var c = scanCallback; scanCallback = null;
+          successSignal();
+          closeScan();
+          setTimeout(function(){ c(String(raw).trim()); }, 200);
+        }
+      }
+    } catch(e){}
+    detecting = false;
+  }, 130);
+}
+
+// Создаём панель зума заранее (она будет видна всегда сверху)
+function addZoomPanelEarly(){
+  var panel = document.createElement("div");
+  panel.className = "zoom-panel";
+  panel.id = "zoomPanel";
+  panel.innerHTML =
+    '<div class="zoom-label"><span>🔍 Зум</span><span id="zoomValue">1.0x</span></div>' +
+    '<input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">' +
+    '<div class="zoom-tip">Если штрихкод не читается — увеличьте зум</div>';
+  $("reader").appendChild(panel);
+}
+
+function activateZoomSlider(){
+  var slider = document.getElementById("zoomSlider");
+  var valEl = document.getElementById("zoomValue");
+  if(!slider || !nativeTrack) return;
+
+  var caps = {};
+  try { caps = nativeTrack.getCapabilities ? nativeTrack.getCapabilities() : {}; } catch(e){}
+  var maxZoom = (caps.zoom && caps.zoom.max) ? caps.zoom.max : 5;
+  var minZoom = (caps.zoom && caps.zoom.min) ? caps.zoom.min : 1;
+  slider.min = minZoom;
+  slider.max = maxZoom;
+  slider.value = minZoom;
+  valEl.textContent = minZoom.toFixed(1) + "x";
+
+  slider.oninput = async function(){
+    var v = parseFloat(slider.value);
+    valEl.textContent = v.toFixed(1) + "x";
+    if (caps.zoom) {
+      try {
+        await nativeTrack.applyConstraints({ advanced: [{ zoom: v }] });
+        return;
+      } catch(e){}
+    }
+    if (nativeVideo) {
+      nativeVideo.style.transform = "scale(" + v + ")";
+      nativeVideo.style.transformOrigin = "center center";
+    }
+  };
+}
+
+function closeScan(){
+  $("scanModal").classList.remove("active");
+  if(nativeLoop){ clearInterval(nativeLoop); nativeLoop = null; }
+  if(nativeStream){
+    nativeStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} });
+    nativeStream = null;
+  }
+  nativeTrack = null;
+  nativeVideo = null;
+  nativeDetector = null;
+  if(scanner){
+    scanner.stop().then(function(){ try{ scanner.clear(); }catch(e){} scanner = null; }).catch(function(){ scanner = null; });
+  }
+}
+
+$("scanBtn").onclick = function(){
+  openScan("Сканирование", "Наведите камеру на штрихкод или S/N", async function(code){
+    var cleanCode = String(code).trim();
+    if(cleanCode.indexOf("http") >= 0 || cleanCode.toLowerCase().indexOf("ozon") >= 0){
+      var m = cleanCode.match(/(\d{8,14})/);
+      if(m) cleanCode = m[0];
+    }
+    var it = await findItem(cleanCode);
+    if(it){
+      currentItem = it; renderItem(it);
+      var what = (findSN(it) && findSN(it).toLowerCase() === cleanCode.toLowerCase()) ? "S/N" : "ШК";
+      toast("Найдено по " + what + ": " + (it.имущество || cleanCode));
+    } else {
+      currentItem = null;
+      $("result").innerHTML =
+        '<div class="card">' +
+          '<div class="row"><span class="label">Считанный код</span><span class="value">' + esc(code) + '</span></div>' +
+          '<div class="row"><span class="label">Результат</span><span class="value" style="color:#dc2626">Не найдено в базе</span></div>' +
+        '</div>';
+      toast("Не найдено: " + cleanCode);
+    }
+  });
+};
+
+$("resetBtn").onclick = function(){
+  currentItem = null; renderItem(null); $("result").innerHTML = ""; $("searchInput").value = "";
+  toast("Сброшено");
+};
+
+$("commentBtn").onclick = function(){
+  if(!currentItem){ toast("Сначала отсканируйте товар"); return; }
+  showCommentDialog();
+};
+
+$("placeBtn").onclick = function(){
+  if(!currentItem){ toast("Сначала отсканируйте товар"); return; }
+  showPlacementDialog();
+};
+
+function showCommentDialog(){
+  var item = currentItem;
+  var m = document.createElement("div");
+  m.className = "modal active"; m.id = "commentModal";
+  m.innerHTML =
+    '<div class="modal-header"><span>Комментарий</span><button type="button" class="modal-close" id="cClose">X</button></div>' +
+    '<div class="card">' +
+      '<div class="row"><span class="label">Имущество</span><span class="value">' + esc(item.имущество || "—") + '</span></div>' +
+      '<div class="row"><span class="label">ШК</span><span class="value">' + esc(item.шк || "—") + '</span></div>' +
+    '</div>' +
+    '<textarea class="search" id="commentText" placeholder="Введите комментарий..." style="min-height:140px">' + esc(item.комментарий || "") + '</textarea>' +
+    '<div class="btn-row" style="margin-bottom:10px">' +
+      '<button type="button" class="btn btn-lightred" id="clearCommentBtn">Очистить</button>' +
+      '<button type="button" class="btn btn-success" id="saveCommentBtn">Сохранить</button>' +
+    '</div>' +
+    '<button type="button" class="btn btn-secondary" id="cancelComment">Отмена</button>';
+  document.body.appendChild(m);
+
+  $("cClose").onclick = function(){ m.remove(); };
+  $("cancelComment").onclick = function(){ m.remove(); };
+
+  $("clearCommentBtn").onclick = async function(){
+    item.комментарий = "";
+    await putItem(item);
+    if(item.sn){
+      var clone = {}; for(var k in item) clone[k] = item[k];
+      clone["шк"] = "SN:" + item.sn;
+      await putItem(clone);
+    }
+    currentItem = item;
+    renderItem(item);
+    m.remove();
+    toast("Комментарий очищен");
+  };
+
+  $("saveCommentBtn").onclick = async function(){
+    var v = $("commentText").value.trim();
+    item.комментарий = v;
+    await putItem(item);
+    if(item.sn){
+      var clone = {}; for(var k in item) clone[k] = item[k];
+      clone["шк"] = "SN:" + item.sn;
+      await putItem(clone);
+    }
+    currentItem = item;
+    renderItem(item);
+    m.remove();
+    toast(v ? "Комментарий сохранён" : "Комментарий удалён");
+  };
+}
+
+function showPlacementDialog(){
+  var item = currentItem;
+  var m = document.createElement("div");
+  m.className = "modal active"; m.id = "placeModal";
+  m.innerHTML =
+    '<div class="modal-header"><span>Размещение</span><button type="button" class="modal-close" id="pClose">X</button></div>' +
+    '<div class="card">' +
+      '<div class="row"><span class="label">Имущество</span><span class="value">' + esc(item.имущество || "—") + '</span></div>' +
+      '<div class="row"><span class="label">Расположение</span><span class="value">' + esc(item.расположение || "—") + '</span></div>' +
+      '<div class="row"><span class="label">Размещение</span><span class="value">' + esc(item.размещение || "—") + '</span></div>' +
+      '<div class="row"><span class="label">Статус</span><span class="value">' + esc(item.статус || "—") + '</span></div>' +
+    '</div>' +
+    '<button type="button" class="btn btn-sky" id="scanCellBtn">Сканировать ячейку</button>' +
+    '<input type="text" class="search" id="manualPlace" placeholder="Или введите вручную (например: Сектор А-12)" value="' + esc(item.размещение || "") + '">' +
+    '<div class="btn-row" style="margin-bottom:10px">' +
+      '<button type="button" class="btn btn-yellow" id="bufferBtn">В буфер</button>' +
+      '<button type="button" class="btn btn-success" id="savePlaceBtn">Сохранить</button>' +
+    '</div>' +
+    '<button type="button" class="btn btn-secondary" id="cancelPlace">Отмена</button>';
+  document.body.appendChild(m);
+
+  $("pClose").onclick = function(){ m.remove(); };
+  $("cancelPlace").onclick = function(){ m.remove(); };
+
+  $("scanCellBtn").onclick = function(){
+    openScan("Сканирование ячейки", "Наведите камеру на ШК ячейки", function(code){
+      $("manualPlace").value = code;
+      toast("Отсканировано: " + code);
+    });
+  };
+
+  async function saveBoth(){
+    await putItem(item);
+    if(item.sn){
+      var clone = {}; for(var k in item) clone[k] = item[k];
+      clone["шк"] = "SN:" + item.sn;
+      await putItem(clone);
+    }
+  }
+
+  $("bufferBtn").onclick = async function(){
+    item.размещение = "Буферная зона";
+    item.статус = "В буфере";
+    await saveBoth();
+    currentItem = item; renderItem(item); m.remove();
+    toast("Перемещено в буфер");
+  };
+
+  $("savePlaceBtn").onclick = async function(){
+    var v = $("manualPlace").value.trim();
+    if(!v){ toast("Укажите место"); return; }
+    item.размещение = v;
+    item.статус = "На месте";
+    await saveBoth();
+    currentItem = item; renderItem(item); m.remove();
+    toast("Сохранено: " + v);
+  };
+}
+
+var sT;
+$("searchInput").oninput = function(e){
+  clearTimeout(sT);
+  var q = e.target.value.trim().toLowerCase();
+  if(!q) return;
+  sT = setTimeout(async function(){
+    var it = await findItem(q);
+    if(it){ currentItem = it; renderItem(it); }
+    else {
+      var all = await getAllItems();
+      var f = all.find(function(i){
+        if((i.имущество || "").toLowerCase().indexOf(q) >= 0) return true;
+        if((findSN(i) || "").toLowerCase().indexOf(q) >= 0) return true;
+        return false;
+      });
+      if(f){ currentItem = f; renderItem(f); }
+      else {
+        currentItem = null;
+        $("result").innerHTML =
+          '<div class="card"><div class="row"><span class="label">Поиск</span><span class="value">Ничего не найдено: ' + esc(q) + '</span></div></div>';
+      }
+    }
+  }, 400);
+};
+
+(async function(){
+  debug("Старт приложения...");
+  try {
+    await initDB();
+    await refreshHeader();
+    debug(useMemory ? "Готово (в памяти)" : "Готово");
+  } catch(e){
+    console.error(e);
+    debug("Ошибка старта: " + e.message);
+    toast("Ошибка запуска");
+  }
+})();
+
+window.addEventListener("error", function(e){
+  debug("JS-ошибка: " + (e.message || "unknown"));
+});
+
+// ============ Тема (светлая/тёмная) ============
+(function(){
+  function applyTheme(dark){
+    if(dark){ document.body.classList.add("dark"); }
+    else { document.body.classList.remove("dark"); }
+    var btn = document.getElementById("themeBtn");
+    if(btn) btn.textContent = dark ? "☀️" : "🌙";
+    try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch(e){}
+  }
+  var saved = null;
+  try { saved = localStorage.getItem("theme"); } catch(e){}
+  var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  var isDark = saved === "dark" || (!saved && prefersDark);
+  applyTheme(isDark);
+  var btn = document.getElementById("themeBtn");
+  if(btn) btn.onclick = function(){
+    applyTheme(!document.body.classList.contains("dark"));
+  };
+})();
+</script>
+</body>
+</html>
