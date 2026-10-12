@@ -41,15 +41,15 @@ header .subtitle{font-size:12px;opacity:.85;margin-top:3px}
 .card{background:var(--card-bg);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:background .3s,border .3s}
 .card.scanned{background:#ecfdf5;border-left:5px solid #22c55e}
 body.dark .card.scanned{background:#143b1e;border-left:5px solid #22c55e}
-.card.notfound{background:#fef3c7;border-left:5px solid #f59e0b}
-body.dark .card.notfound{background:#4a2e00;border-left:5px solid #f59e0b}
+.card.notfound{background:#fef08a;border-left:5px solid #eab308;border:2px solid #eab308}
+body.dark .card.notfound{background:#4a2e00;border-left:5px solid #eab308;border:2px solid #eab308}
 .card .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);gap:10px;font-size:15px}
 .card .row:last-child{border-bottom:none}
 .card .label{color:var(--label);flex-shrink:0}
 .card .value{font-weight:600;text-align:right;word-break:break-word}
 .card .comment{background:var(--comment-bg);color:var(--comment-text);padding:10px;border-radius:10px;margin-top:8px;font-size:14px;white-space:pre-wrap}
 .card .scanned-badge{display:inline-block;background:#22c55e;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle}
-.card .notfound-badge{display:inline-block;background:#f59e0b;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle}
+.card .notfound-badge{display:inline-block;background:#dc2626;color:#fff;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;margin-left:6px;vertical-align:middle}
 .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
 .status-buffer{background:#fef3c7;color:#92400e}
 .status-ok{background:#dcfce7;color:#166534}
@@ -84,13 +84,15 @@ body.dark .status-wrong{background:#7f1d1d;color:#fca5a5}
 .debug{font-size:11px;color:var(--debug-text);padding:8px;background:var(--debug-bg);border-radius:8px;margin-top:10px;word-break:break-all;line-height:1.4;transition:background .3s,color .3s}
 textarea.search{min-height:100px;resize:vertical;font-family:inherit}
 .history-entry{background:var(--card-bg);border-radius:12px;padding:12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer;border-left:5px solid #38bdf8;transition:background .2s}
-.history-entry.notfound{border-left-color:#f59e0b;background:#fef3c7}
+.history-entry.notfound{border-left-color:#dc2626;background:#fef08a}
 body.dark .history-entry.notfound{background:#4a2e00}
 .history-entry:active{opacity:.8}
 .history-entry .he-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:4px}
 .history-entry .he-shk{font-weight:700;font-size:15px}
+.history-entry.notfound .he-shk{color:#991b1b}
 .history-entry .he-time{font-size:11px;color:var(--label);flex-shrink:0}
 .history-entry .he-name{font-size:13px;color:var(--label);word-break:break-word}
+.history-entry.notfound .he-name{color:#991b1b;font-weight:700}
 .history-empty{color:#fff;text-align:center;padding:30px;font-size:15px;opacity:.8}
 </style>
 </head>
@@ -322,7 +324,7 @@ function renderItem(it){
   var badge = "";
   if(it._notFound){
     cardClass = " notfound";
-    badge = '<span class="notfound-badge">⚠ НЕ НАЙДЕНО В БАЗЕ</span>';
+    badge = '<span class="notfound-badge">⚠ НЕ НАЙДЕН В БАЗЕ</span>';
   } else if(it._scanned){
     cardClass = " scanned";
     badge = '<span class="scanned-badge">✓ СКАНИРОВАНО</span>';
@@ -405,6 +407,9 @@ $("fileInput").onchange = async function(e){
     norm.forEach(function(o){
       var shk = String(o[detectedKey] || "").trim();
       if(!shk) return;
+      // Отрезаем пометку "НЕ НАЙДЕН В БАЗЕ", если она была добавлена ранее
+      shk = shk.replace(/\s*[-—]?\s*НЕ НАЙДЕН В БАЗЕ\s*$/i, "").trim();
+      if(!shk) return;
       o["шк"] = shk;
       if(detectedSnKey && o[detectedSnKey]){
         o["sn"] = o[detectedSnKey];
@@ -436,7 +441,6 @@ $("fileInput").onchange = async function(e){
     debug("С колонкой ШК: " + valid.length);
     if(!valid.length){ toast("Нет строк с ШК"); return; }
 
-    // Запоминаем порядок строк из Excel для правильной выгрузки
     valid.forEach(function(o, idx){ o["_order"] = idx; });
 
     var oldItems = await getAllItems();
@@ -496,8 +500,6 @@ $("exportBtn").onclick = async function(){
     items = items.filter(function(i){ return String(i.шк).indexOf("SN:") !== 0; });
     if(!items.length){ toast("Нет данных"); return; }
 
-    // Сортировка: сначала товары из исходного Excel (в исходном порядке),
-    // затем "не найдено" — в конце, по времени добавления
     items.sort(function(a, b){
       var aNF = a._notFound ? 1 : 0;
       var bNF = b._notFound ? 1 : 0;
@@ -530,9 +532,12 @@ $("exportBtn").onclick = async function(){
       cols.forEach(function(c){
         var v;
         if(c.key === "_check"){
-          if(it._notFound) v = "Не найден в базе";
+          if(it._notFound) v = "НЕ НАЙДЕН В БАЗЕ";
           else if(it._scanned) v = "Сканирован";
           else v = "";
+        } else if(c.key === "шк" && it._notFound){
+          // Вставляем пометку прямо в ячейку ШК
+          v = String(it.шк) + " — НЕ НАЙДЕН В БАЗЕ";
         } else {
           v = it[c.key];
           if(v === undefined || v === null) v = "";
@@ -546,43 +551,45 @@ $("exportBtn").onclick = async function(){
 
     try {
       var range = XLSX.utils.decode_range(ws["!ref"]);
+      // Шапка — синяя
       for(var C = range.s.c; C <= range.e.c; C++){
         var addr = XLSX.utils.encode_cell({ r: 0, c: C });
         if(!ws[addr]) continue;
         ws[addr].s = {
           fill: { patternType: "solid", fgColor: { rgb: "1E40AF" } },
-          font: { color: { rgb: "FFFFFF" }, bold: true },
+          font: { color: { rgb: "FFFFFF" }, bold: true, sz: 11 },
           alignment: { horizontal: "center", vertical: "center" }
         };
       }
+      // Данные
       for(var R = 1; R <= range.e.r; R++){
         var rowData = rows[R - 1];
         if(!rowData) continue;
-        var check = rowData["Статус проверки"];
-        var fill = null;
-        var fontColor = null;
-        if(check === "Не найден в базе"){
-          fill = "FFE699"; fontColor = "7F6000";
-        } else if(check === "Сканирован"){
-          fill = "C6EFCE"; fontColor = "006100";
-        }
-        if(!fill) continue;
+        var isNotFound = rowData["Статус проверки"] === "НЕ НАЙДЕН В БАЗЕ";
+        var isScanned = rowData["Статус проверки"] === "Сканирован";
         for(var C = range.s.c; C <= range.e.c; C++){
           var addr = XLSX.utils.encode_cell({ r: R, c: C });
           if(!ws[addr]) continue;
-          ws[addr].s = {
-            fill: { patternType: "solid", fgColor: { rgb: fill } },
-            font: { color: { rgb: fontColor } }
-          };
+          var style = {};
+          if(isNotFound){
+            style.fill = { patternType: "solid", fgColor: { rgb: "FFEB3B" } };
+            style.font = { color: { rgb: "B71C1C" }, bold: true };
+          } else if(isScanned){
+            style.fill = { patternType: "solid", fgColor: { rgb: "C6EFCE" } };
+            style.font = { color: { rgb: "006100" } };
+          }
+          ws[addr].s = style;
         }
       }
+      // Ширина колонок
       ws["!cols"] = cols.map(function(c){
         if(c.header === "Имущество") return { wch: 45 };
-        if(c.header === "ШК") return { wch: 18 };
+        if(c.header === "ШК") return { wch: 32 };
         if(c.header === "S/N") return { wch: 18 };
         if(c.header === "Расположение") return { wch: 30 };
         if(c.header === "Размещение") return { wch: 30 };
         if(c.header === "Комментарий") return { wch: 30 };
+        if(c.header === "Статус проверки") return { wch: 22 };
         return { wch: 16 };
       });
     } catch(e){ console.log("Ошибка стилей:", e); }
@@ -897,7 +904,7 @@ function showHistoryDialog(){
     for(var i = history.length - 1; i >= 0; i--){
       var h = history[i];
       var cls = h.found ? "" : " notfound";
-      var name = h.found ? (h.имущество || "—") : "НЕ НАЙДЕНО В БАЗЕ";
+      var name = h.found ? (h.имущество || "—") : "НЕ НАЙДЕН В БАЗЕ";
       var shkLine = h.found ? (h.шк || h.code) : h.code;
       inner += '<div class="history-entry' + cls + '" data-idx="' + i + '">' +
         '<div class="he-top"><span class="he-shk">' + esc(shkLine) + '</span><span class="he-time">' + fmtTime(h.time) + '</span></div>' +
