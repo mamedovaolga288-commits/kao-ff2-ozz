@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1e40af">
 <title>Складской сканер</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root{
@@ -35,14 +35,21 @@ header .subtitle{font-size:12px;opacity:.85;margin-top:3px}
 .btn-yellow{background:#f59e0b}
 .btn-success{background:#16a34a}
 .btn-secondary{background:#64748b}
+.btn-purple{background:#8b5cf6}
 .btn-row{display:flex;gap:8px}
 .btn-row .btn{flex:1;padding:16px 6px;font-size:13px;line-height:1.2;margin-bottom:0}
-.card{background:var(--card-bg);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:background .3s}
+.card{background:var(--card-bg);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);transition:background .3s,border .3s}
+.card.scanned{background:#ecfdf5;border-left:5px solid #22c55e}
+body.dark .card.scanned{background:#143b1e;border-left:5px solid #22c55e}
+.card.notfound{background:#fef3c7;border-left:5px solid #f59e0b}
+body.dark .card.notfound{background:#4a2e00;border-left:5px solid #f59e0b}
 .card .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);gap:10px;font-size:15px}
 .card .row:last-child{border-bottom:none}
 .card .label{color:var(--label);flex-shrink:0}
 .card .value{font-weight:600;text-align:right;word-break:break-word}
 .card .comment{background:var(--comment-bg);color:var(--comment-text);padding:10px;border-radius:10px;margin-top:8px;font-size:14px;white-space:pre-wrap}
+.card .scanned-badge{display:inline-block;background:#22c55e;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle}
+.card .notfound-badge{display:inline-block;background:#f59e0b;color:#fff;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle}
 .status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
 .status-buffer{background:#fef3c7;color:#92400e}
 .status-ok{background:#dcfce7;color:#166534}
@@ -76,6 +83,15 @@ body.dark .status-wrong{background:#7f1d1d;color:#fca5a5}
 .file-input-wrap input[type=file]{position:absolute;left:-9999px}
 .debug{font-size:11px;color:var(--debug-text);padding:8px;background:var(--debug-bg);border-radius:8px;margin-top:10px;word-break:break-all;line-height:1.4;transition:background .3s,color .3s}
 textarea.search{min-height:100px;resize:vertical;font-family:inherit}
+.history-entry{background:var(--card-bg);border-radius:12px;padding:12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer;border-left:5px solid #38bdf8;transition:background .2s}
+.history-entry.notfound{border-left-color:#f59e0b;background:#fef3c7}
+body.dark .history-entry.notfound{background:#4a2e00}
+.history-entry:active{opacity:.8}
+.history-entry .he-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:4px}
+.history-entry .he-shk{font-weight:700;font-size:15px}
+.history-entry .he-time{font-size:11px;color:var(--label);flex-shrink:0}
+.history-entry .he-name{font-size:13px;color:var(--label);word-break:break-word}
+.history-empty{color:#fff;text-align:center;padding:30px;font-size:15px;opacity:.8}
 </style>
 </head>
 <body>
@@ -96,6 +112,8 @@ textarea.search{min-height:100px;resize:vertical;font-family:inherit}
     <button type="button" class="btn btn-yellow" id="commentBtn">Комментарий</button>
     <button type="button" class="btn btn-sky" id="placeBtn">Размещение</button>
   </div>
+
+  <button type="button" class="btn btn-purple" id="historyBtn" style="margin-bottom:10px">История сканирований</button>
 
   <div id="result"></div>
 
@@ -223,6 +241,28 @@ async function findItem(code){
   return found || null;
 }
 
+// ============ История сканирований ============
+function loadHistory(){
+  try { return JSON.parse(localStorage.getItem("scanHistory") || "[]"); } catch(e){ return []; }
+}
+function saveHistory(arr){
+  try { localStorage.setItem("scanHistory", JSON.stringify(arr.slice(-200))); } catch(e){}
+}
+function addHistory(entry){
+  var arr = loadHistory();
+  arr.push(entry);
+  if(arr.length > 200) arr = arr.slice(-200);
+  saveHistory(arr);
+}
+function clearHistory(){
+  try { localStorage.removeItem("scanHistory"); } catch(e){}
+}
+function fmtTime(ts){
+  var d = new Date(ts);
+  function p(n){ return n < 10 ? "0" + n : "" + n; }
+  return p(d.getDate()) + "." + p(d.getMonth()+1) + "." + d.getFullYear() + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
 var currentItem = null, scanCallback = null, scanner = null;
 var nativeStream = null, nativeLoop = null, nativeDetector = null;
 var nativeVideo = null, nativeTrack = null;
@@ -277,9 +317,20 @@ function renderItem(it){
   var snRow = sn ? '<div class="row"><span class="label">S/N</span><span class="value">' + esc(sn) + '</span></div>' : '';
   var pl = findPlacement(it);
   var plRow = pl ? '<div class="row"><span class="label">Размещение</span><span class="value">' + esc(pl) + '</span></div>' : '';
+
+  var cardClass = "";
+  var badge = "";
+  if(it._notFound){
+    cardClass = " notfound";
+    badge = '<span class="notfound-badge">⚠ НЕ НАЙДЕНО В БАЗЕ</span>';
+  } else if(it._scanned){
+    cardClass = " scanned";
+    badge = '<span class="scanned-badge">✓ СКАНИРОВАНО</span>';
+  }
+
   el.innerHTML =
-    '<div class="card">' +
-      '<div class="row"><span class="label">Имущество</span><span class="value">' + esc(it.имущество || "—") + '</span></div>' +
+    '<div class="card' + cardClass + '">' +
+      '<div class="row"><span class="label">Имущество' + badge + '</span><span class="value">' + esc(it.имущество || "—") + '</span></div>' +
       '<div class="row"><span class="label">ШК</span><span class="value">' + esc(it.шк || "—") + '</span></div>' +
       snRow +
       '<div class="row"><span class="label">Тип</span><span class="value">' + esc(it["тип имущества"] || "—") + '</span></div>' +
@@ -308,9 +359,11 @@ $("fileInput").onchange = async function(e){
     var snKeys = ["s/n", "sn", "серийный номер", "серийный", "serial", "serial number", "сер. номер", "сер номер"];
     var commentAliases = ["комментарий", "комментарии", "коммент", "примечание", "примечания"];
     var placementAliases = ["размещение", "размещ", "новое размещение", "фактическое размещение"];
+    var statusCheckKeys = ["статус проверки", "проверка", "сканировано", "статус сканирования"];
     var norm = [];
     var detectedKey = null;
     var detectedSnKey = null;
+    var detectedCheckKey = null;
     rows.forEach(function(r){
       var o = {};
       Object.keys(r).forEach(function(k){ o[String(k).trim().toLowerCase()] = String(r[k]).trim(); });
@@ -324,6 +377,12 @@ $("fileInput").onchange = async function(e){
         for(var i = 0; i < snKeys.length; i++){
           var found = Object.keys(o).find(function(k){ return k === snKeys[i] || k.indexOf(snKeys[i]) >= 0; });
           if(found && o[found]){ detectedSnKey = found; break; }
+        }
+      }
+      if(!detectedCheckKey){
+        for(var i = 0; i < statusCheckKeys.length; i++){
+          var found = Object.keys(o).find(function(k){ return k === statusCheckKeys[i] || k.indexOf(statusCheckKeys[i]) >= 0; });
+          if(found){ detectedCheckKey = found; break; }
         }
       }
       norm.push(o);
@@ -364,36 +423,65 @@ $("fileInput").onchange = async function(e){
         if(o["место"]) o["расположение"] = o["место"];
         if(o["местонахождение"]) o["расположение"] = o["местонахождение"];
       }
+      // Читаем статус проверки
+      if(detectedCheckKey && o[detectedCheckKey]){
+        var scVal = String(o[detectedCheckKey]).toLowerCase();
+        if(scVal.indexOf("не найден") >= 0){
+          o["_notFound"] = true;
+        } else if(scVal.indexOf("сканирован") >= 0 || scVal === "да" || scVal === "yes"){
+          o["_scanned"] = true;
+        }
+      }
       valid.push(o);
     });
     debug("С колонкой ШК: " + valid.length);
     if(!valid.length){ toast("Нет строк с ШК"); return; }
+
+    // Восстанавливаем состояния (сканировано / не найдено) и комментарии
     var oldItems = await getAllItems();
     var oldMap = {};
     oldItems.forEach(function(i){ oldMap[String(i.шк)] = i; });
+
+    // Собираем "не найдено" записи, которых нет в новом Excel, чтобы сохранить их
+    var notFoundCodes = {};
+    oldItems.forEach(function(i){
+      if(i._notFound && !i.sn) notFoundCodes[i.шк] = true;
+    });
+    // Убираем те, что уже есть в valid
+    valid.forEach(function(o){ delete notFoundCodes[o["шк"]]; });
+
     valid.forEach(function(o){
       var old = oldMap[String(o.шк)];
       if(old){
         if(old.комментарий) o.комментарий = old.комментарий;
         if(old.размещение) o.размещение = old.размещение;
+        if(old._scanned) { o._scanned = true; o._scannedAt = old._scannedAt; }
+        if(old._notFound) { o._notFound = true; o._notFoundAt = old._notFoundAt; }
       }
     });
+
     await clearAll();
     var C = 500;
-    for(var i = 0; i < valid.length; i += C){
-      var slice = valid.slice(i, i + C);
-      var toPut = [];
-      slice.forEach(function(o){
-        toPut.push(o);
-        if(o["sn"]){
-          var clone = {};
-          for(var k in o) clone[k] = o[k];
-          clone["шк"] = "SN:" + o["sn"];
-          toPut.push(clone);
-        }
-      });
-      await bulkPut(toPut);
+    var toPutAll = [];
+    valid.forEach(function(o){
+      toPutAll.push(o);
+      if(o["sn"]){
+        var clone = {};
+        for(var k in o) clone[k] = o[k];
+        clone["шк"] = "SN:" + o["sn"];
+        toPutAll.push(clone);
+      }
+    });
+    // Возвращаем "не найдено" записи (из прошлых сессий)
+    Object.keys(notFoundCodes).forEach(function(code){
+      var old = oldMap[code];
+      if(old) toPutAll.push(old);
+    });
+
+    for(var i = 0; i < toPutAll.length; i += C){
+      await bulkPut(toPutAll.slice(i, i + C));
     }
+
     await refreshHeader();
     toast("Загружено " + valid.length + " записей", 3000);
     $("fileInput").value = "";
@@ -420,20 +508,78 @@ $("exportBtn").onclick = async function(){
       { key: "статус", header: "Статус" },
       { key: "sn", header: "S/N" },
       { key: "комментарий", header: "Комментарий" },
-      { key: "размещение", header: "Размещение" }
+      { key: "размещение", header: "Размещение" },
+      { key: "_check", header: "Статус проверки" }
     ];
 
     var rows = items.map(function(it){
       var row = {};
       cols.forEach(function(c){
-        var v = it[c.key];
-        if(v === undefined || v === null) v = "";
+        var v;
+        if(c.key === "_check"){
+          if(it._notFound) v = "Не найден в базе";
+          else if(it._scanned) v = "Сканирован";
+          else v = "";
+        } else {
+          v = it[c.key];
+          if(v === undefined || v === null) v = "";
+        }
         row[c.header] = v;
       });
       return row;
     });
 
     var ws = XLSX.utils.json_to_sheet(rows, { header: cols.map(function(c){ return c.header; }) });
+
+    // Стили
+    try {
+      var range = XLSX.utils.decode_range(ws["!ref"]);
+      // Шапка — синяя
+      for(var C = range.s.c; C <= range.e.c; C++){
+        var addr = XLSX.utils.encode_cell({ r: 0, c: C });
+        if(!ws[addr]) continue;
+        ws[addr].s = {
+          fill: { patternType: "solid", fgColor: { rgb: "1E40AF" } },
+          font: { color: { rgb: "FFFFFF" }, bold: true },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+      // Данные
+      for(var R = 1; R <= range.e.r; R++){
+        var rowData = rows[R - 1];
+        if(!rowData) continue;
+        var check = rowData["Статус проверки"];
+        var fill = null;
+        var fontColor = null;
+        if(check === "Не найден в базе"){
+          fill = "FFE699";        // жёлтый
+          fontColor = "7F6000";   // тёмно-жёлтый
+        } else if(check === "Сканирован"){
+          fill = "C6EFCE";        // зелёный
+          fontColor = "006100";   // тёмно-зелёный
+        }
+        if(!fill) continue;
+        for(var C = range.s.c; C <= range.e.c; C++){
+          var addr = XLSX.utils.encode_cell({ r: R, c: C });
+          if(!ws[addr]) continue;
+          ws[addr].s = {
+            fill: { patternType: "solid", fgColor: { rgb: fill } },
+            font: { color: { rgb: fontColor } }
+          };
+        }
+      }
+      // Ширина колонок
+      ws["!cols"] = cols.map(function(c){
+        if(c.header === "Имущество") return { wch: 45 };
+        if(c.header === "ШК") return { wch: 18 };
+        if(c.header === "S/N") return { wch: 18 };
+        if(c.header === "Расположение") return { wch: 30 };
+        if(c.header === "Размещение") return { wch: 30 };
+        if(c.header === "Комментарий") return { wch: 30 };
+        return { wch: 16 };
+      });
+    } catch(e){ console.log("Ошибка стилей:", e); }
+
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Данные");
     var d = new Date().toISOString().slice(0, 10);
@@ -468,7 +614,6 @@ function successSignal(){
   }
 }
 
-// Сброс панели зума
 function resetZoomPanel(){
   var slider = document.getElementById("zoomSlider");
   var valEl = document.getElementById("zoomValue");
@@ -476,7 +621,7 @@ function resetZoomPanel(){
   if(slider) slider.value = 1;
   if(valEl) valEl.textContent = "1.0x";
   if(tip) tip.textContent = "Если код не читается — увеличьте зум";
-  slider.oninput = null;
+  if(slider) slider.oninput = null;
 }
 
 async function openScan(title, hint, cb){
@@ -488,7 +633,6 @@ async function openScan(title, hint, cb){
   resetZoomPanel();
 
   var hasNative = ("BarcodeDetector" in window);
-
   if(hasNative){
     try {
       await startNativeScanner();
@@ -498,62 +642,36 @@ async function openScan(title, hint, cb){
       $("reader").innerHTML = "";
     }
   }
-
-  // Используем html5-qrcode как основной на старых iPhone
   await startHtml5Scanner();
 }
 
 async function startHtml5Scanner(){
-  if(typeof Html5Qrcode === "undefined"){
-    toast("Библиотека сканера не загружена");
-    closeScan();
-    return;
-  }
-
+  if(typeof Html5Qrcode === "undefined"){ toast("Библиотека сканера не загружена"); closeScan(); return; }
   var holder = document.createElement("div");
   holder.id = "html5reader";
   holder.style.width = "100%";
   holder.style.maxWidth = "500px";
   holder.style.margin = "0 auto";
   $("reader").appendChild(holder);
-
   scanner = new Html5Qrcode("html5reader", { verbose: false });
-
   var config = {
     fps: 30,
-    qrbox: function(w, h){
-      var minEdge = Math.min(w, h);
-      return {
-        width: Math.floor(w * 0.95),
-        height: Math.floor(Math.min(180, h * 0.4))
-      };
-    },
+    qrbox: function(w, h){ return { width: Math.floor(w * 0.95), height: Math.floor(Math.min(180, h * 0.4)) }; },
     aspectRatio: 1.777,
     disableFlip: false,
-    experimentalFeatures: {
-      useBarCodeDetectorIfSupported: true
-    }
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
   };
-
   if(typeof Html5QrcodeSupportedFormats !== "undefined"){
     config.formatsToSupport = [
-      Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.CODE_39,
-      Html5QrcodeSupportedFormats.CODE_93,
-      Html5QrcodeSupportedFormats.EAN_13,
-      Html5QrcodeSupportedFormats.EAN_8,
-      Html5QrcodeSupportedFormats.UPC_A,
-      Html5QrcodeSupportedFormats.UPC_E,
-      Html5QrcodeSupportedFormats.ITF,
-      Html5QrcodeSupportedFormats.QR_CODE,
-      Html5QrcodeSupportedFormats.DATA_MATRIX
+      Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E, Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.DATA_MATRIX
     ];
   }
-
   try {
-    await scanner.start(
-      { facingMode: "environment" },
-      config,
+    await scanner.start({ facingMode: "environment" }, config,
       function(decodedText){
         if(scanCallback){
           var c = scanCallback; scanCallback = null;
@@ -561,11 +679,7 @@ async function startHtml5Scanner(){
           closeScan();
           setTimeout(function(){ c(decodedText.trim()); }, 200);
         }
-      },
-      function(){}
-    );
-
-    // Активируем зум для html5-сканера
+      }, function(){});
     setTimeout(function(){
       try {
         var videoEl = document.querySelector("#html5reader video");
@@ -574,24 +688,17 @@ async function startHtml5Scanner(){
         if(!stream) return;
         var track = stream.getVideoTracks()[0];
         if(!track) return;
-        nativeTrack = track;
-        nativeVideo = videoEl;
+        nativeTrack = track; nativeVideo = videoEl;
         activateZoom();
-      } catch(e){ console.log("Не удалось активировать зум", e); }
+      } catch(e){}
     }, 800);
-
   } catch(err){
-    console.error(err);
-    toast("Камера недоступна: " + err.message);
-    closeScan();
+    console.error(err); toast("Камера недоступна: " + err.message); closeScan();
   }
 }
 
 async function startNativeScanner(){
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    throw new Error("getUserMedia не поддерживается");
-  }
-
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ throw new Error("getUserMedia не поддерживается"); }
   var deviceId = null;
   try {
     var devices = await navigator.mediaDevices.enumerateDevices();
@@ -602,82 +709,54 @@ async function startNativeScanner(){
     });
     if (backCams.length > 0) deviceId = backCams[0].deviceId;
     else if (videoDevices.length > 0) deviceId = videoDevices[videoDevices.length - 1].deviceId;
-  } catch (e) { console.warn("Не удалось перечислить камеры:", e); }
-
+  } catch (e) {}
   var constraints = {
     video: {
       deviceId: deviceId ? { exact: deviceId } : undefined,
       facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      frameRate: { ideal: 30 },
-      focusMode: "continuous"
+      width: { ideal: 1920 }, height: { ideal: 1080 },
+      frameRate: { ideal: 30 }, focusMode: "continuous"
     },
     audio: false
   };
-
   nativeStream = await navigator.mediaDevices.getUserMedia(constraints);
   nativeTrack = nativeStream.getVideoTracks()[0];
-
   var wrap = document.createElement("div");
   wrap.className = "scan-video-wrap";
   var video = document.createElement("video");
-  video.setAttribute("playsinline", "true");
-  video.setAttribute("autoplay", "true");
-  video.setAttribute("muted", "true");
+  video.setAttribute("playsinline", "true"); video.setAttribute("autoplay", "true"); video.setAttribute("muted", "true");
   video.srcObject = nativeStream;
   wrap.appendChild(video);
   nativeVideo = video;
-
-  var line = document.createElement("div");
-  line.className = "scan-line";
-  wrap.appendChild(line);
-
-  var hintEl = document.createElement("div");
-  hintEl.className = "scan-line-text";
-  hintEl.textContent = "Штрихкод или S/N в рамке";
-  wrap.appendChild(hintEl);
-
+  var line = document.createElement("div"); line.className = "scan-line"; wrap.appendChild(line);
+  var hintEl = document.createElement("div"); hintEl.className = "scan-line-text"; hintEl.textContent = "Штрихкод или S/N в рамке"; wrap.appendChild(hintEl);
   $("reader").appendChild(wrap);
-
   await new Promise(function(res){ video.onloadedmetadata = function(){ video.play().then(res).catch(res); }; });
-
   try {
     var caps = nativeTrack.getCapabilities ? nativeTrack.getCapabilities() : {};
     if (caps.focusMode && caps.focusMode.indexOf("continuous") >= 0) {
       await nativeTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
     }
-  } catch(e){ console.log("Автофокус недоступен:", e); }
-
+  } catch(e){}
   activateZoom();
-
   var hintTimeout = setTimeout(function(){
     var h = document.querySelector(".scan-line-text");
-    if (h && scanCallback) {
-      h.textContent = "Отодвиньте телефон на 15–20 см или увеличьте зум";
-      h.style.color = "#ffcc00";
-    }
+    if (h && scanCallback) { h.textContent = "Отодвиньте телефон на 15–20 см или увеличьте зум"; h.style.color = "#ffcc00"; }
   }, 5000);
-
   var formats = ["code_128", "code_39", "code_93", "codabar", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code", "data_matrix", "itf"];
   try {
     var supported = await BarcodeDetector.getSupportedFormats();
     formats = formats.filter(function(f){ return supported.indexOf(f) >= 0; });
   } catch(e){}
-
   if(!formats.length) formats = undefined;
   nativeDetector = formats ? new BarcodeDetector({ formats: formats }) : new BarcodeDetector();
-
-  var lastDetect = 0;
-  var detecting = false;
-
+  var lastDetect = 0; var detecting = false;
   nativeLoop = setInterval(async function(){
     if(!scanCallback){ return; }
     if(detecting) return;
     var now = Date.now();
     if(now - lastDetect < 100) return;
-    lastDetect = now;
-    detecting = true;
+    lastDetect = now; detecting = true;
     try {
       var codes = await nativeDetector.detect(video);
       if(codes && codes.length){
@@ -685,8 +764,7 @@ async function startNativeScanner(){
         if(raw && scanCallback){
           clearTimeout(hintTimeout);
           var c = scanCallback; scanCallback = null;
-          successSignal();
-          closeScan();
+          successSignal(); closeScan();
           setTimeout(function(){ c(String(raw).trim()); }, 200);
         }
       }
@@ -695,58 +773,35 @@ async function startNativeScanner(){
   }, 100);
 }
 
-// Универсальная активация ползунка зума
 function activateZoom(){
   var slider = document.getElementById("zoomSlider");
   var valEl = document.getElementById("zoomValue");
   var tip = document.getElementById("zoomTip");
   if(!slider || !nativeTrack) return;
-
   var caps = {};
   try { caps = nativeTrack.getCapabilities ? nativeTrack.getCapabilities() : {}; } catch(e){}
   var maxZoom = (caps.zoom && caps.zoom.max) ? caps.zoom.max : 5;
   var minZoom = (caps.zoom && caps.zoom.min) ? caps.zoom.min : 1;
-
-  slider.min = minZoom;
-  slider.max = Math.max(maxZoom, 3);
-  slider.value = minZoom;
-  slider.step = 0.1;
+  slider.min = minZoom; slider.max = Math.max(maxZoom, 3); slider.value = minZoom; slider.step = 0.1;
   valEl.textContent = minZoom.toFixed(1) + "x";
-
-  if (caps.zoom) {
-    tip.textContent = "Ползунок управляет оптическим зумом камеры";
-  } else {
-    tip.textContent = "Ползунок увеличивает картинку (программный зум)";
-  }
-
+  if (caps.zoom) tip.textContent = "Ползунок управляет оптическим зумом камеры";
+  else tip.textContent = "Ползунок увеличивает картинку (программный зум)";
   slider.oninput = async function(){
     var v = parseFloat(slider.value);
     valEl.textContent = v.toFixed(1) + "x";
     if (caps.zoom) {
-      try {
-        await nativeTrack.applyConstraints({ advanced: [{ zoom: v }] });
-        return;
-      } catch(e){}
+      try { await nativeTrack.applyConstraints({ advanced: [{ zoom: v }] }); return; } catch(e){}
     }
-    if (nativeVideo) {
-      nativeVideo.style.transform = "scale(" + v + ")";
-    }
+    if (nativeVideo) nativeVideo.style.transform = "scale(" + v + ")";
   };
 }
 
 function closeScan(){
   $("scanModal").classList.remove("active");
   if(nativeLoop){ clearInterval(nativeLoop); nativeLoop = null; }
-  if(nativeStream){
-    nativeStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} });
-    nativeStream = null;
-  }
-  nativeTrack = null;
-  nativeVideo = null;
-  nativeDetector = null;
-  if(scanner){
-    scanner.stop().then(function(){ try{ scanner.clear(); }catch(e){} scanner = null; }).catch(function(){ scanner = null; });
-  }
+  if(nativeStream){ nativeStream.getTracks().forEach(function(t){ try{ t.stop(); }catch(e){} }); nativeStream = null; }
+  nativeTrack = null; nativeVideo = null; nativeDetector = null;
+  if(scanner){ scanner.stop().then(function(){ try{ scanner.clear(); }catch(e){} scanner = null; }).catch(function(){ scanner = null; }); }
   resetZoomPanel();
 }
 
@@ -759,17 +814,50 @@ $("scanBtn").onclick = function(){
     }
     var it = await findItem(cleanCode);
     if(it){
-      currentItem = it; renderItem(it);
+      // Помечаем как сканированное
+      it._scanned = true;
+      it._scannedAt = Date.now();
+      delete it._notFound;
+      await putItem(it);
+      if(it.sn){
+        var clone = {}; for(var k in it) clone[k] = it[k];
+        clone["шк"] = "SN:" + it.sn;
+        await putItem(clone);
+      }
+      currentItem = it;
+      renderItem(it);
       var what = (findSN(it) && findSN(it).toLowerCase() === cleanCode.toLowerCase()) ? "S/N" : "ШК";
+      addHistory({ шк: it.шк, имущество: it.имущество || "", sn: findSN(it) || "", code: cleanCode, found: true, what: what, time: Date.now() });
       toast("Найдено по " + what + ": " + (it.имущество || cleanCode));
     } else {
-      currentItem = null;
-      $("result").innerHTML =
-        '<div class="card">' +
-          '<div class="row"><span class="label">Считанный код</span><span class="value">' + esc(code) + '</span></div>' +
-          '<div class="row"><span class="label">Результат</span><span class="value" style="color:#dc2626">Не найдено в базе</span></div>' +
-        '</div>';
-      toast("Не найдено: " + cleanCode);
+      // НЕ НАЙДЕНО — добавляем новую запись с одним ШК
+      var notFoundItem = {
+        шк: cleanCode,
+        имущество: "",
+        "тип имущества": "",
+        расположение: "",
+        мол: "",
+        ответственный: "",
+        статус: "",
+        sn: "",
+        комментарий: "",
+        размещение: "",
+        _notFound: true,
+        _notFoundAt: Date.now()
+      };
+      // Если уже есть запись с таким ШК (ранее не найдено) — не создаём дубликат
+      var existing = await getItem(cleanCode);
+      if(!existing){
+        await putItem(notFoundItem);
+      } else {
+        existing._notFound = true;
+        existing._notFoundAt = Date.now();
+        await putItem(existing);
+      }
+      currentItem = notFoundItem;
+      renderItem(notFoundItem);
+      addHistory({ шк: cleanCode, имущество: "", code: cleanCode, found: false, time: Date.now() });
+      toast("Не найдено — добавлено в базу: " + cleanCode);
     }
   });
 };
@@ -789,6 +877,63 @@ $("placeBtn").onclick = function(){
   showPlacementDialog();
 };
 
+$("historyBtn").onclick = function(){ showHistoryDialog(); };
+
+function showHistoryDialog(){
+  var history = loadHistory();
+  var m = document.createElement("div");
+  m.className = "modal active"; m.id = "historyModal";
+  var inner = '<div class="modal-header"><span>История (' + history.length + ')</span><button type="button" class="modal-close" id="hClose">X</button></div>';
+  if(!history.length){
+    inner += '<div class="history-empty">История пуста.<br>Отсканируйте что-нибудь, и записи появятся здесь.</div>';
+    inner += '<button type="button" class="btn btn-secondary" id="hCancel">Закрыть</button>';
+  } else {
+    inner += '<button type="button" class="btn btn-lightred" id="hClear" style="margin-bottom:10px">Очистить историю</button>';
+    inner += '<div id="hList">';
+    for(var i = history.length - 1; i >= 0; i--){
+      var h = history[i];
+      var cls = h.found ? "" : " notfound";
+      var name = h.found ? (h.имущество || "—") : "НЕ НАЙДЕНО В БАЗЕ";
+      var shkLine = h.found ? (h.шк || h.code) : h.code;
+      inner += '<div class="history-entry' + cls + '" data-idx="' + i + '">' +
+        '<div class="he-top"><span class="he-shk">' + esc(shkLine) + '</span><span class="he-time">' + fmtTime(h.time) + '</span></div>' +
+        '<div class="he-name">' + esc(name) + (h.what ? " (" + h.what + ")" : "") + '</div>' +
+        '</div>';
+    }
+    inner += '</div>';
+    inner += '<button type="button" class="btn btn-secondary" id="hCancel" style="margin-top:10px">Закрыть</button>';
+  }
+  m.innerHTML = inner;
+  document.body.appendChild(m);
+  $("hClose").onclick = function(){ m.remove(); };
+  $("hCancel").onclick = function(){ m.remove(); };
+  var clearBtn = $("hClear");
+  if(clearBtn){
+    clearBtn.onclick = function(){
+      if(confirm("Удалить всю историю сканирований?")){ clearHistory(); m.remove(); toast("История очищена"); }
+    };
+  }
+  var list = m.querySelector("#hList");
+  if(list){
+    list.querySelectorAll(".history-entry").forEach(function(el){
+      el.onclick = async function(){
+        var idx = parseInt(el.getAttribute("data-idx"), 10);
+        var h = history[idx];
+        if(!h){ toast("Запись не найдена"); return; }
+        if(h.found){
+          var it = await getItem(h.шк);
+          if(it){ currentItem = it; renderItem(it); m.remove(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+          else toast("Товар не найден в текущей базе");
+        } else {
+          var nf = await getItem(h.code);
+          if(nf){ currentItem = nf; renderItem(nf); m.remove(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+          else toast("Запись не найдена");
+        }
+      };
+    });
+  }
+}
+
 function showCommentDialog(){
   var item = currentItem;
   var m = document.createElement("div");
@@ -806,36 +951,20 @@ function showCommentDialog(){
     '</div>' +
     '<button type="button" class="btn btn-secondary" id="cancelComment">Отмена</button>';
   document.body.appendChild(m);
-
   $("cClose").onclick = function(){ m.remove(); };
   $("cancelComment").onclick = function(){ m.remove(); };
-
   $("clearCommentBtn").onclick = async function(){
     item.комментарий = "";
     await putItem(item);
-    if(item.sn){
-      var clone = {}; for(var k in item) clone[k] = item[k];
-      clone["шк"] = "SN:" + item.sn;
-      await putItem(clone);
-    }
-    currentItem = item;
-    renderItem(item);
-    m.remove();
-    toast("Комментарий очищен");
+    if(item.sn){ var clone = {}; for(var k in item) clone[k] = item[k]; clone["шк"] = "SN:" + item.sn; await putItem(clone); }
+    currentItem = item; renderItem(item); m.remove(); toast("Комментарий очищен");
   };
-
   $("saveCommentBtn").onclick = async function(){
     var v = $("commentText").value.trim();
     item.комментарий = v;
     await putItem(item);
-    if(item.sn){
-      var clone = {}; for(var k in item) clone[k] = item[k];
-      clone["шк"] = "SN:" + item.sn;
-      await putItem(clone);
-    }
-    currentItem = item;
-    renderItem(item);
-    m.remove();
+    if(item.sn){ var clone = {}; for(var k in item) clone[k] = item[k]; clone["шк"] = "SN:" + item.sn; await putItem(clone); }
+    currentItem = item; renderItem(item); m.remove();
     toast(v ? "Комментарий сохранён" : "Комментарий удалён");
   };
 }
@@ -860,42 +989,31 @@ function showPlacementDialog(){
     '</div>' +
     '<button type="button" class="btn btn-secondary" id="cancelPlace">Отмена</button>';
   document.body.appendChild(m);
-
   $("pClose").onclick = function(){ m.remove(); };
   $("cancelPlace").onclick = function(){ m.remove(); };
-
   $("scanCellBtn").onclick = function(){
     openScan("Сканирование ячейки", "Наведите камеру на ШК ячейки", function(code){
       $("manualPlace").value = code;
       toast("Отсканировано: " + code);
     });
   };
-
   async function saveBoth(){
     await putItem(item);
-    if(item.sn){
-      var clone = {}; for(var k in item) clone[k] = item[k];
-      clone["шк"] = "SN:" + item.sn;
-      await putItem(clone);
-    }
+    if(item.sn){ var clone = {}; for(var k in item) clone[k] = item[k]; clone["шк"] = "SN:" + item.sn; await putItem(clone); }
   }
-
   $("bufferBtn").onclick = async function(){
     item.размещение = "Буферная зона";
     item.статус = "В буфере";
     await saveBoth();
-    currentItem = item; renderItem(item); m.remove();
-    toast("Перемещено в буфер");
+    currentItem = item; renderItem(item); m.remove(); toast("Перемещено в буфер");
   };
-
   $("savePlaceBtn").onclick = async function(){
     var v = $("manualPlace").value.trim();
     if(!v){ toast("Укажите место"); return; }
     item.размещение = v;
     item.статус = "На месте";
     await saveBoth();
-    currentItem = item; renderItem(item); m.remove();
-    toast("Сохранено: " + v);
+    currentItem = item; renderItem(item); m.remove(); toast("Сохранено: " + v);
   };
 }
 
@@ -917,8 +1035,7 @@ $("searchInput").oninput = function(e){
       if(f){ currentItem = f; renderItem(f); }
       else {
         currentItem = null;
-        $("result").innerHTML =
-          '<div class="card"><div class="row"><span class="label">Поиск</span><span class="value">Ничего не найдено: ' + esc(q) + '</span></div></div>';
+        $("result").innerHTML = '<div class="card"><div class="row"><span class="label">Поиск</span><span class="value">Ничего не найдено: ' + esc(q) + '</span></div></div>';
       }
     }
   }, 400);
@@ -931,34 +1048,26 @@ $("searchInput").oninput = function(e){
     await refreshHeader();
     debug(useMemory ? "Готово (в памяти)" : "Готово");
   } catch(e){
-    console.error(e);
-    debug("Ошибка старта: " + e.message);
-    toast("Ошибка запуска");
+    console.error(e); debug("Ошибка старта: " + e.message); toast("Ошибка запуска");
   }
 })();
 
-window.addEventListener("error", function(e){
-  debug("JS-ошибка: " + (e.message || "unknown"));
-});
+window.addEventListener("error", function(e){ debug("JS-ошибка: " + (e.message || "unknown")); });
 
-// ============ Тема (светлая/тёмная) ============
+// Тема
 (function(){
   function applyTheme(dark){
-    if(dark){ document.body.classList.add("dark"); }
-    else { document.body.classList.remove("dark"); }
+    if(dark){ document.body.classList.add("dark"); } else { document.body.classList.remove("dark"); }
     var btn = document.getElementById("themeBtn");
     if(btn) btn.textContent = dark ? "☀️" : "🌙";
     try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch(e){}
   }
-  var saved = null;
-  try { saved = localStorage.getItem("theme"); } catch(e){}
+  var saved = null; try { saved = localStorage.getItem("theme"); } catch(e){}
   var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   var isDark = saved === "dark" || (!saved && prefersDark);
   applyTheme(isDark);
   var btn = document.getElementById("themeBtn");
-  if(btn) btn.onclick = function(){
-    applyTheme(!document.body.classList.contains("dark"));
-  };
+  if(btn) btn.onclick = function(){ applyTheme(!document.body.classList.contains("dark")); };
 })();
 </script>
 </body>
