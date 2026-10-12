@@ -423,7 +423,6 @@ $("fileInput").onchange = async function(e){
         if(o["место"]) o["расположение"] = o["место"];
         if(o["местонахождение"]) o["расположение"] = o["местонахождение"];
       }
-      // Читаем статус проверки
       if(detectedCheckKey && o[detectedCheckKey]){
         var scVal = String(o[detectedCheckKey]).toLowerCase();
         if(scVal.indexOf("не найден") >= 0){
@@ -437,17 +436,17 @@ $("fileInput").onchange = async function(e){
     debug("С колонкой ШК: " + valid.length);
     if(!valid.length){ toast("Нет строк с ШК"); return; }
 
-    // Восстанавливаем состояния (сканировано / не найдено) и комментарии
+    // Запоминаем порядок строк из Excel для правильной выгрузки
+    valid.forEach(function(o, idx){ o["_order"] = idx; });
+
     var oldItems = await getAllItems();
     var oldMap = {};
     oldItems.forEach(function(i){ oldMap[String(i.шк)] = i; });
 
-    // Собираем "не найдено" записи, которых нет в новом Excel, чтобы сохранить их
     var notFoundCodes = {};
     oldItems.forEach(function(i){
       if(i._notFound && !i.sn) notFoundCodes[i.шк] = true;
     });
-    // Убираем те, что уже есть в valid
     valid.forEach(function(o){ delete notFoundCodes[o["шк"]]; });
 
     valid.forEach(function(o){
@@ -472,7 +471,6 @@ $("fileInput").onchange = async function(e){
         toPutAll.push(clone);
       }
     });
-    // Возвращаем "не найдено" записи (из прошлых сессий)
     Object.keys(notFoundCodes).forEach(function(code){
       var old = oldMap[code];
       if(old) toPutAll.push(old);
@@ -497,6 +495,21 @@ $("exportBtn").onclick = async function(){
     var items = await getAllItems();
     items = items.filter(function(i){ return String(i.шк).indexOf("SN:") !== 0; });
     if(!items.length){ toast("Нет данных"); return; }
+
+    // Сортировка: сначала товары из исходного Excel (в исходном порядке),
+    // затем "не найдено" — в конце, по времени добавления
+    items.sort(function(a, b){
+      var aNF = a._notFound ? 1 : 0;
+      var bNF = b._notFound ? 1 : 0;
+      if(aNF !== bNF) return aNF - bNF;
+      if(aNF === 1){
+        return (a._notFoundAt || 0) - (b._notFoundAt || 0);
+      }
+      var ao = (typeof a._order === "number") ? a._order : 999999;
+      var bo = (typeof b._order === "number") ? b._order : 999999;
+      if(ao !== bo) return ao - bo;
+      return String(a.шк).localeCompare(String(b.шк));
+    });
 
     var cols = [
       { key: "имущество", header: "Имущество" },
@@ -531,10 +544,8 @@ $("exportBtn").onclick = async function(){
 
     var ws = XLSX.utils.json_to_sheet(rows, { header: cols.map(function(c){ return c.header; }) });
 
-    // Стили
     try {
       var range = XLSX.utils.decode_range(ws["!ref"]);
-      // Шапка — синяя
       for(var C = range.s.c; C <= range.e.c; C++){
         var addr = XLSX.utils.encode_cell({ r: 0, c: C });
         if(!ws[addr]) continue;
@@ -544,7 +555,6 @@ $("exportBtn").onclick = async function(){
           alignment: { horizontal: "center", vertical: "center" }
         };
       }
-      // Данные
       for(var R = 1; R <= range.e.r; R++){
         var rowData = rows[R - 1];
         if(!rowData) continue;
@@ -552,11 +562,9 @@ $("exportBtn").onclick = async function(){
         var fill = null;
         var fontColor = null;
         if(check === "Не найден в базе"){
-          fill = "FFE699";        // жёлтый
-          fontColor = "7F6000";   // тёмно-жёлтый
+          fill = "FFE699"; fontColor = "7F6000";
         } else if(check === "Сканирован"){
-          fill = "C6EFCE";        // зелёный
-          fontColor = "006100";   // тёмно-зелёный
+          fill = "C6EFCE"; fontColor = "006100";
         }
         if(!fill) continue;
         for(var C = range.s.c; C <= range.e.c; C++){
@@ -568,7 +576,6 @@ $("exportBtn").onclick = async function(){
           };
         }
       }
-      // Ширина колонок
       ws["!cols"] = cols.map(function(c){
         if(c.header === "Имущество") return { wch: 45 };
         if(c.header === "ШК") return { wch: 18 };
@@ -814,7 +821,6 @@ $("scanBtn").onclick = function(){
     }
     var it = await findItem(cleanCode);
     if(it){
-      // Помечаем как сканированное
       it._scanned = true;
       it._scannedAt = Date.now();
       delete it._notFound;
@@ -830,7 +836,6 @@ $("scanBtn").onclick = function(){
       addHistory({ шк: it.шк, имущество: it.имущество || "", sn: findSN(it) || "", code: cleanCode, found: true, what: what, time: Date.now() });
       toast("Найдено по " + what + ": " + (it.имущество || cleanCode));
     } else {
-      // НЕ НАЙДЕНО — добавляем новую запись с одним ШК
       var notFoundItem = {
         шк: cleanCode,
         имущество: "",
@@ -845,7 +850,6 @@ $("scanBtn").onclick = function(){
         _notFound: true,
         _notFoundAt: Date.now()
       };
-      // Если уже есть запись с таким ШК (ранее не найдено) — не создаём дубликат
       var existing = await getItem(cleanCode);
       if(!existing){
         await putItem(notFoundItem);
